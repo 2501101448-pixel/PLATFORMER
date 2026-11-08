@@ -1,3 +1,4 @@
+
 package LevelIditor;
 
 import java.awt.BorderLayout;
@@ -47,39 +48,68 @@ import levels.StageManager;
 public class LevelEditor extends JFrame {
 
     private static final long serialVersionUID = 1L;
+
     private static final int COLUMNS = Level.DEFAULT_COLUMNS;
     private static final int ROWS = Level.DEFAULT_ROWS;
     private static final int TILE_SIZE = Level.DEFAULT_TILE_SIZE;
+
     private final AssetCatalog assets;
     private final BackgroundCatalog backgrounds;
     private final MobAssets mobAssets;
     private final Player playerPreview;
+
     private Level level;
+
     private int currentStage = 1;
+
     private JComboBox<String> stageSelector;
     private JComboBox<BackgroundAsset> backgroundSelector;
+    private JComboBox<EnemyType> enemySelector;
+
     private final DefaultListModel<TileAsset> paletteItems =
             new DefaultListModel<>();
-    private final JLabel statusLabel = new JLabel("Choose a resource to paint.");
+
+    private final JLabel statusLabel =
+            new JLabel("Choose a resource to paint.");
+
     private final EditorPanel editorPanel = new EditorPanel();
-    private final Timer saveTimer = new Timer(500, event -> saveLevel());
+
+    private final Timer saveTimer =
+            new Timer(500, event -> saveLevel());
+
     private final Timer previewTimer =
             new Timer(20, event -> editorPanel.repaint());
 
     private int selectedTile = 0;
+
     private boolean settingSpawn;
     private boolean settingEnemy;
+
     private JToggleButton spawnButton;
     private JToggleButton enemyButton;
-    private JComboBox<EnemyType> enemySelector;
+
+    // Button for changing the selected tile's collision property.
+    private JButton collisionButton;
+
+
+    // ==========================================
+    // CONSTRUCTOR
+    // ==========================================
 
     public LevelEditor() throws IOException {
+
         assets = AssetCatalog.load();
         backgrounds = BackgroundCatalog.load();
         mobAssets = MobAssets.load();
+
         playerPreview = new Player(0, 0);
-        playerPreview.setWorldBounds(COLUMNS * TILE_SIZE, ROWS * TILE_SIZE);
+        playerPreview.setWorldBounds(
+                COLUMNS * TILE_SIZE,
+                ROWS * TILE_SIZE
+        );
+
         level = loadStage(currentStage);
+
         saveTimer.setRepeats(false);
         previewTimer.start();
 
@@ -96,212 +126,542 @@ public class LevelEditor extends JFrame {
         setLocationRelativeTo(null);
 
         addWindowListener(new WindowAdapter() {
+
             @Override
             public void windowClosing(WindowEvent event) {
+
                 saveTimer.stop();
                 previewTimer.stop();
+
                 saveLevel();
+
                 dispose();
             }
         });
+
         editorPanel.repaint();
     }
 
+
+    // ==========================================
+    // LOAD STAGE
+    // ==========================================
+
     private Level loadStage(int stageNumber) throws IOException {
+
         Path mapFile = StageManager.getMapFile(stageNumber);
+
         if (java.nio.file.Files.exists(mapFile)) {
-            Level loadedLevel = Level.load(mapFile, assets.getTileCount());
+
+            Level loadedLevel = Level.load(
+                    mapFile,
+                    assets.getTileCount()
+            );
+
             try {
-                backgrounds.getBackground(loadedLevel.getBackgroundName());
+
+                backgrounds.getBackground(
+                        loadedLevel.getBackgroundName()
+                );
+
             } catch (IllegalArgumentException exception) {
+
                 throw new IOException(
                         "The stage uses an unknown background.",
                         exception
                 );
             }
+
             Level expandedLevel;
+
             try {
-                expandedLevel = loadedLevel.resizedToTileSize(TILE_SIZE)
+
+                expandedLevel = loadedLevel
+                        .resizedToTileSize(TILE_SIZE)
                         .expandedTo(COLUMNS, ROWS);
+
             } catch (IllegalArgumentException exception) {
+
                 throw new IOException(
                         "The map tile size cannot be converted to "
-                        + TILE_SIZE + " pixels.",
+                                + TILE_SIZE + " pixels.",
                         exception
                 );
             }
+
             if (expandedLevel.getColumns() != loadedLevel.getColumns()
                     || expandedLevel.getRows() != loadedLevel.getRows()
-                    || expandedLevel.getTileSize() != loadedLevel.getTileSize()) {
+                    || expandedLevel.getTileSize()
+                            != loadedLevel.getTileSize()) {
+
                 expandedLevel.save(mapFile);
             }
+
             return expandedLevel;
         }
 
-        Level newLevel = new Level(COLUMNS, ROWS, TILE_SIZE);
+        Level newLevel = new Level(
+                COLUMNS,
+                ROWS,
+                TILE_SIZE
+        );
+
         newLevel.save(mapFile);
+
         return newLevel;
     }
 
+
+    // ==========================================
+    // TOOLBAR
+    // ==========================================
+
     private void createToolbar() {
-        JPanel toolbar = new JPanel(new java.awt.GridLayout(3, 1));
-        JPanel topRow = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        JPanel assetRow = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        JPanel enemyRow = new JPanel(new FlowLayout(FlowLayout.LEFT));
+
+        JPanel toolbar = new JPanel(
+                new java.awt.GridLayout(3, 1)
+        );
+
+        JPanel topRow = new JPanel(
+                new FlowLayout(FlowLayout.LEFT)
+        );
+
+        JPanel assetRow = new JPanel(
+                new FlowLayout(FlowLayout.LEFT)
+        );
+
+        JPanel enemyRow = new JPanel(
+                new FlowLayout(FlowLayout.LEFT)
+        );
+
         JButton saveButton = new JButton("Save");
         JButton playButton = new JButton("Play");
         JButton loadButton = new JButton("Reload");
         JButton clearButton = new JButton("Clear");
+
         stageSelector = new JComboBox<>();
-        for (int stage = 1; stage <= StageManager.STAGE_COUNT; stage++) {
-            stageSelector.addItem(StageManager.getStageName(stage));
+
+        for (int stage = 1;
+                stage <= StageManager.STAGE_COUNT;
+                stage++) {
+
+            stageSelector.addItem(
+                    StageManager.getStageName(stage)
+            );
         }
+
         stageSelector.setSelectedIndex(currentStage - 1);
+
         stageSelector.addActionListener(event ->
                 changeStage(stageSelector.getSelectedIndex() + 1)
         );
+
         backgroundSelector = new JComboBox<>(
-                backgrounds.getBackgrounds().toArray(new BackgroundAsset[0])
+                backgrounds.getBackgrounds().toArray(
+                        new BackgroundAsset[0]
+                )
         );
-        backgroundSelector.setPreferredSize(new Dimension(220, 28));
+
+        backgroundSelector.setPreferredSize(
+                new Dimension(220, 28)
+        );
+
         backgroundSelector.setSelectedItem(
                 backgrounds.getBackground(level.getBackgroundName())
         );
+
         backgroundSelector.addActionListener(event -> {
+
             BackgroundAsset selectedBackground =
                     (BackgroundAsset) backgroundSelector.getSelectedItem();
+
             if (selectedBackground != null
                     && !selectedBackground.getAssetName().equals(
                             level.getBackgroundName())) {
-                level.setBackgroundName(selectedBackground.getAssetName());
+
+                level.setBackgroundName(
+                        selectedBackground.getAssetName()
+                );
+
                 editorPanel.repaint();
                 markChanged();
             }
         });
+
         spawnButton = new JToggleButton("Set Player Spawn");
+
         enemyButton = new JToggleButton("Place Enemy");
+
         enemySelector = new JComboBox<>(EnemyType.values());
 
+        // --------------------------------------
+        // SOLID TILE BUTTON
+        // --------------------------------------
+
+        collisionButton = new JButton("Mark Selected Solid");
+
+        collisionButton.addActionListener(event -> {
+
+            boolean currentlySolid =
+                    level.isSolidTile(selectedTile);
+
+            // Toggle the selected tile's collision setting.
+            level.setTileSolid(
+                    selectedTile,
+                    !currentlySolid
+            );
+
+            updateCollisionButton();
+
+            statusLabel.setText(
+                    currentlySolid
+                            ? "Selected tile is now PASSABLE."
+                            : "Selected tile is now SOLID."
+            );
+
+            editorPanel.repaint();
+            markChanged();
+        });
+
+
+        // --------------------------------------
+        // SAVE
+        // --------------------------------------
+
         saveButton.addActionListener(event -> {
+
             saveTimer.stop();
             saveLevel();
         });
+
+
+        // --------------------------------------
+        // PLAY
+        // --------------------------------------
+
         playButton.addActionListener(event -> {
+
             saveTimer.stop();
+
             if (saveLevel()) {
-                SwingUtilities.invokeLater(() -> new Main.Game(currentStage));
+
+                SwingUtilities.invokeLater(
+                        () -> new Main.Game(currentStage)
+                );
             }
         });
+
+
+        // --------------------------------------
+        // RELOAD
+        // --------------------------------------
+
         loadButton.addActionListener(event -> reloadLevel());
+
+
+        // --------------------------------------
+        // CLEAR
+        // --------------------------------------
+
         clearButton.addActionListener(event -> clearLevel());
+
+
+        // --------------------------------------
+        // PLAYER SPAWN MODE
+        // --------------------------------------
+
         spawnButton.addActionListener(event -> {
+
             settingSpawn = spawnButton.isSelected();
+
             settingEnemy = false;
+
             enemyButton.setSelected(false);
-            statusLabel.setText(settingSpawn
-                    ? "Click a map cell to place the player spawn."
-                    : "Choose a resource to paint.");
+
+            statusLabel.setText(
+                    settingSpawn
+                            ? "Click a map cell to place the player spawn."
+                            : "Choose a resource to paint."
+            );
         });
+
+
+        // --------------------------------------
+        // ENEMY PLACEMENT MODE
+        // --------------------------------------
+
         enemyButton.addActionListener(event -> {
+
             settingEnemy = enemyButton.isSelected();
+
             settingSpawn = false;
+
             spawnButton.setSelected(false);
-            statusLabel.setText(settingEnemy
-                    ? "Click a map cell to place an enemy."
-                    : "Choose a resource to paint.");
+
+            statusLabel.setText(
+                    settingEnemy
+                            ? "Click a map cell to place an enemy."
+                            : "Choose a resource to paint."
+            );
         });
+
+
+        // --------------------------------------
+        // TOP ROW
+        // --------------------------------------
 
         topRow.add(saveButton);
         topRow.add(playButton);
         topRow.add(loadButton);
         topRow.add(clearButton);
+
         topRow.add(new JLabel("Stage:"));
         topRow.add(stageSelector);
+
+
+        // --------------------------------------
+        // ASSET ROW
+        // --------------------------------------
 
         assetRow.add(new JLabel("Background:"));
         assetRow.add(backgroundSelector);
         assetRow.add(spawnButton);
-        assetRow.add(new JLabel("Left click: place | Right click: erase"));
-        assetRow.add(new JLabel("Map: " + COLUMNS + " x " + ROWS
-                + " tiles, " + TILE_SIZE + " x " + TILE_SIZE
-                + " pixels per tile (scroll sideways)"));
+
+        assetRow.add(
+                new JLabel("Left click: place | Right click: erase")
+        );
+
+        assetRow.add(
+                new JLabel(
+                        "Map: " + COLUMNS + " x " + ROWS
+                                + " tiles, " + TILE_SIZE + " x "
+                                + TILE_SIZE + " pixels per tile "
+                                + "(scroll sideways)"
+                )
+        );
+
+
+        // --------------------------------------
+        // ENEMY AND COLLISION ROW
+        // --------------------------------------
 
         enemyRow.add(enemyButton);
         enemyRow.add(new JLabel("Enemy:"));
         enemyRow.add(enemySelector);
+        enemyRow.add(collisionButton);
+
+
         toolbar.add(topRow);
         toolbar.add(assetRow);
         toolbar.add(enemyRow);
+
         add(toolbar, BorderLayout.NORTH);
     }
 
+
+    // ==========================================
+    // COLLISION BUTTON UPDATE
+    // ==========================================
+
+    private void updateCollisionButton() {
+
+        if (collisionButton == null || level == null) {
+            return;
+        }
+
+        boolean solid = level.isSolidTile(selectedTile);
+
+        if (solid) {
+
+            collisionButton.setText(
+                    "Mark Selected Passable"
+            );
+
+        } else {
+
+            collisionButton.setText(
+                    "Mark Selected Solid"
+            );
+        }
+    }
+
+
+    // ==========================================
+    // RESOURCE PALETTE
+    // ==========================================
+
     private void createPalette() {
-        JPanel panel = new JPanel(new BorderLayout(6, 6));
-        panel.setBorder(new EmptyBorder(10, 10, 10, 10));
+
+        JPanel panel = new JPanel(
+                new BorderLayout(6, 6)
+        );
+
+        panel.setBorder(
+                new EmptyBorder(10, 10, 10, 10)
+        );
 
         JLabel title = new JLabel("RESOURCES");
-        title.setFont(new Font("Arial", Font.BOLD, 17));
+
+        title.setFont(
+                new Font("Arial", Font.BOLD, 17)
+        );
 
         JComboBox<String> categories = new JComboBox<>(
                 assets.getCategories().toArray(new String[0])
         );
-        JPanel assetPicker = new JPanel(new BorderLayout(6, 6));
+
+        JPanel assetPicker = new JPanel(
+                new BorderLayout(6, 6)
+        );
+
         JList<TileAsset> tileList = new JList<>(paletteItems);
-        tileList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        tileList.setCellRenderer((list, tile, index, selected, focused) -> {
-            JLabel item = new JLabel(tile.getName(), createTileIcon(tile), 2);
-            item.setOpaque(true);
-            item.setBackground(selected ? new Color(200, 220, 255) : Color.WHITE);
-            item.setBorder(new EmptyBorder(3, 4, 3, 4));
-            return item;
-        });
+
+        tileList.setSelectionMode(
+                ListSelectionModel.SINGLE_SELECTION
+        );
+
+        tileList.setCellRenderer(
+                (list, tile, index, selected, focused) -> {
+
+                    JLabel item = new JLabel(
+                            tile.getName(),
+                            createTileIcon(tile),
+                            2
+                    );
+
+                    item.setOpaque(true);
+
+                    item.setBackground(
+                            selected
+                                    ? new Color(200, 220, 255)
+                                    : Color.WHITE
+                    );
+
+                    item.setBorder(
+                            new EmptyBorder(3, 4, 3, 4)
+                    );
+
+                    return item;
+                }
+        );
+
+
+        // --------------------------------------
+        // TILE SELECTION
+        // --------------------------------------
+
         tileList.addListSelectionListener(event -> {
-            if (!event.getValueIsAdjusting() && tileList.getSelectedValue() != null) {
-                selectedTile = tileList.getSelectedValue().getId();
+
+            if (!event.getValueIsAdjusting()
+                    && tileList.getSelectedValue() != null) {
+
+                TileAsset selectedAsset =
+                        tileList.getSelectedValue();
+
+                selectedTile = selectedAsset.getId();
+
                 settingSpawn = false;
                 settingEnemy = false;
+
                 spawnButton.setSelected(false);
                 enemyButton.setSelected(false);
+
+                updateCollisionButton();
+
+                String collisionStatus =
+                        level.isSolidTile(selectedTile)
+                                ? "SOLID"
+                                : "PASSABLE";
+
                 statusLabel.setText(
-                        "Selected: " + tileList.getSelectedValue().getName()
+                        "Selected: " + selectedAsset.getName()
+                                + " | " + collisionStatus
                 );
             }
         });
+
+
+        // --------------------------------------
+        // CATEGORY SELECTION
+        // --------------------------------------
+
         categories.addActionListener(event ->
-                showCategory(tileList, (String) categories.getSelectedItem())
+                showCategory(
+                        tileList,
+                        (String) categories.getSelectedItem()
+                )
         );
 
-        assetPicker.add(categories, BorderLayout.NORTH);
-        assetPicker.add(new JScrollPane(tileList), BorderLayout.CENTER);
+
+        assetPicker.add(
+                categories,
+                BorderLayout.NORTH
+        );
+
+        assetPicker.add(
+                new JScrollPane(tileList),
+                BorderLayout.CENTER
+        );
+
         panel.add(title, BorderLayout.NORTH);
         panel.add(assetPicker, BorderLayout.CENTER);
-        panel.setPreferredSize(new Dimension(255, 0));
+
+        panel.setPreferredSize(
+                new Dimension(255, 0)
+        );
+
         add(panel, BorderLayout.WEST);
 
-        showCategory(tileList, (String) categories.getSelectedItem());
+        showCategory(
+                tileList,
+                (String) categories.getSelectedItem()
+        );
     }
 
-    private void showCategory(JList<TileAsset> tileList, String category) {
+
+    // ==========================================
+    // SHOW RESOURCE CATEGORY
+    // ==========================================
+
+    private void showCategory(
+            JList<TileAsset> tileList,
+            String category
+    ) {
+
         paletteItems.clear();
+
         if (category == null) {
             return;
         }
+
         for (TileAsset tile : assets.getTiles(category)) {
+
             paletteItems.addElement(tile);
         }
+
         if (!paletteItems.isEmpty()) {
+
             tileList.setSelectedIndex(0);
         }
     }
 
+
+    // ==========================================
+    // CREATE TILE ICON
+    // ==========================================
+
     private ImageIcon createTileIcon(TileAsset tile) {
+
         BufferedImage icon = new BufferedImage(
                 40,
                 40,
                 BufferedImage.TYPE_INT_ARGB
         );
+
         Graphics2D graphics = icon.createGraphics();
+
         if (tile.getImage() != null) {
+
             graphics.drawImage(
                     tile.getImage(),
                     0,
@@ -310,117 +670,245 @@ public class LevelEditor extends JFrame {
                     icon.getHeight(),
                     null
             );
+
         } else {
+
             graphics.setColor(tile.getColor());
-            graphics.fillRect(0, 0, icon.getWidth(), icon.getHeight());
+
+            graphics.fillRect(
+                    0,
+                    0,
+                    icon.getWidth(),
+                    icon.getHeight()
+            );
         }
+
         graphics.dispose();
+
         return new ImageIcon(icon);
     }
 
+
+    // ==========================================
+    // CANVAS
+    // ==========================================
+
     private void createCanvas() {
-        editorPanel.setPreferredSize(new Dimension(
-                level.getColumns() * TILE_SIZE,
-                level.getRows() * TILE_SIZE
-        ));
+
+        editorPanel.setPreferredSize(
+                new Dimension(
+                        level.getColumns() * TILE_SIZE,
+                        level.getRows() * TILE_SIZE
+                )
+        );
+
         JScrollPane mapScroll = new JScrollPane(editorPanel);
+
         mapScroll.getVerticalScrollBar().setUnitIncrement(32);
         mapScroll.getHorizontalScrollBar().setUnitIncrement(32);
+
         add(mapScroll, BorderLayout.CENTER);
 
-        JPanel footer = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        JPanel footer = new JPanel(
+                new FlowLayout(FlowLayout.LEFT)
+        );
+
         footer.add(statusLabel);
+
         add(footer, BorderLayout.SOUTH);
     }
 
+
+    // ==========================================
+    // SAVE LEVEL
+    // ==========================================
+
     private boolean saveLevel() {
+
         try {
+
             Path mapFile = StageManager.getMapFile(currentStage);
+
             level.save(mapFile);
-            statusLabel.setText("Saved " + mapFile + ".");
+
+            statusLabel.setText(
+                    "Saved " + mapFile + "."
+            );
+
             return true;
+
         } catch (IOException exception) {
-            showError("Unable to save the level:\n" + exception.getMessage());
+
+            showError(
+                    "Unable to save the level:\n"
+                            + exception.getMessage()
+            );
+
             return false;
         }
     }
 
+
+    // ==========================================
+    // RELOAD LEVEL
+    // ==========================================
+
     private void reloadLevel() {
+
         saveTimer.stop();
+
         try {
+
             level = loadStage(currentStage);
+
             backgroundSelector.setSelectedItem(
-                    backgrounds.getBackground(level.getBackgroundName())
+                    backgrounds.getBackground(
+                            level.getBackgroundName()
+                    )
             );
-            editorPanel.setPreferredSize(new Dimension(
-                    level.getColumns() * TILE_SIZE,
-                    level.getRows() * TILE_SIZE
-            ));
+
+            updateCollisionButton();
+
+            editorPanel.setPreferredSize(
+                    new Dimension(
+                            level.getColumns() * TILE_SIZE,
+                            level.getRows() * TILE_SIZE
+                    )
+            );
+
             editorPanel.revalidate();
             editorPanel.repaint();
+
             statusLabel.setText("Level reloaded.");
+
         } catch (IOException exception) {
-            showError("Unable to reload the level:\n" + exception.getMessage());
+
+            showError(
+                    "Unable to reload the level:\n"
+                            + exception.getMessage()
+            );
+
         } catch (IllegalArgumentException exception) {
-            showError("Unable to resize the level:\n" + exception.getMessage());
+
+            showError(
+                    "Unable to resize the level:\n"
+                            + exception.getMessage()
+            );
         }
     }
 
+
+    // ==========================================
+    // CHANGE STAGE
+    // ==========================================
+
     private void changeStage(int stageNumber) {
+
         if (stageNumber == currentStage) {
             return;
         }
 
         saveTimer.stop();
+
         if (!saveLevel()) {
-            stageSelector.setSelectedIndex(currentStage - 1);
+
+            stageSelector.setSelectedIndex(
+                    currentStage - 1
+            );
+
             return;
         }
 
         try {
+
             level = loadStage(stageNumber);
+
             currentStage = stageNumber;
+
             backgroundSelector.setSelectedItem(
-                    backgrounds.getBackground(level.getBackgroundName())
+                    backgrounds.getBackground(
+                            level.getBackgroundName()
+                    )
             );
-            editorPanel.setPreferredSize(new Dimension(
-                    level.getColumns() * TILE_SIZE,
-                    level.getRows() * TILE_SIZE
-            ));
+
+            updateCollisionButton();
+
+            editorPanel.setPreferredSize(
+                    new Dimension(
+                            level.getColumns() * TILE_SIZE,
+                            level.getRows() * TILE_SIZE
+                    )
+            );
+
             editorPanel.revalidate();
             editorPanel.repaint();
+
             statusLabel.setText(
-                    StageManager.getStageName(currentStage) + " loaded."
+                    StageManager.getStageName(currentStage)
+                            + " loaded."
             );
+
         } catch (IOException exception) {
-            stageSelector.setSelectedIndex(currentStage - 1);
-            showError("Unable to open the stage:\n" + exception.getMessage());
+
+            stageSelector.setSelectedIndex(
+                    currentStage - 1
+            );
+
+            showError(
+                    "Unable to open the stage:\n"
+                            + exception.getMessage()
+            );
         }
     }
 
+
+    // ==========================================
+    // CLEAR LEVEL
+    // ==========================================
+
     private void clearLevel() {
+
         int answer = JOptionPane.showConfirmDialog(
                 this,
                 "Clear every tile and enemy in this level?",
                 "Clear Level",
                 JOptionPane.YES_NO_OPTION
         );
+
         if (answer != JOptionPane.YES_OPTION) {
             return;
         }
 
         for (int row = 0; row < level.getRows(); row++) {
-            for (int column = 0; column < level.getColumns(); column++) {
+
+            for (int column = 0;
+                    column < level.getColumns();
+                    column++) {
+
                 level.setTile(column, row, -1);
             }
         }
-        level.clearEnemies();
+
+        // Remove all enemy spawn positions.
+        level.clearEnemySpawns();
+
+        // Keep solid tile type settings.
+        // These are properties of tile types, not placed tiles.
+
         editorPanel.repaint();
-        saveLevel();
+
+        markChanged();
     }
 
+
+    // ==========================================
+    // ERROR MESSAGE
+    // ==========================================
+
     private void showError(String message) {
+
         statusLabel.setText("Level operation failed.");
+
         JOptionPane.showMessageDialog(
                 this,
                 message,
@@ -429,16 +917,31 @@ public class LevelEditor extends JFrame {
         );
     }
 
+
+    // ==========================================
+    // UNSAVED CHANGES
+    // ==========================================
+
     private void markChanged() {
+
         statusLabel.setText("Unsaved changes...");
+
         saveTimer.restart();
     }
 
+
+    // ==========================================
+    // EDITOR PANEL
+    // ==========================================
+
     private class EditorPanel extends JPanel {
+
         private static final long serialVersionUID = 1L;
+
         private EditMode editMode = EditMode.NONE;
 
         private enum EditMode {
+
             NONE,
             PLACE_TILE,
             ERASE_TILE,
@@ -447,172 +950,420 @@ public class LevelEditor extends JFrame {
             ERASE_ENEMY
         }
 
+
+        // --------------------------------------
+        // CONSTRUCTOR
+        // --------------------------------------
+
         private EditorPanel() {
-            setBackground(new Color(45, 45, 45));
+
+            setBackground(
+                    new Color(45, 45, 45)
+            );
+
             addMouseListener(new MouseAdapter() {
+
                 @Override
                 public void mousePressed(MouseEvent event) {
+
                     if (!SwingUtilities.isLeftMouseButton(event)
                             && !SwingUtilities.isRightMouseButton(event)) {
+
                         return;
                     }
+
                     if (settingSpawn) {
+
                         editMode = EditMode.SET_SPAWN;
+
                     } else if (settingEnemy) {
-                        editMode = SwingUtilities.isRightMouseButton(event)
-                                ? EditMode.ERASE_ENEMY
-                                : EditMode.PLACE_ENEMY;
+
+                        editMode =
+                                SwingUtilities.isRightMouseButton(event)
+                                        ? EditMode.ERASE_ENEMY
+                                        : EditMode.PLACE_ENEMY;
+
                     } else {
-                        editMode = SwingUtilities.isRightMouseButton(event)
-                                ? EditMode.ERASE_TILE
-                                : EditMode.PLACE_TILE;
+
+                        editMode =
+                                SwingUtilities.isRightMouseButton(event)
+                                        ? EditMode.ERASE_TILE
+                                        : EditMode.PLACE_TILE;
                     }
+
                     editMap(event);
                 }
 
+
                 @Override
                 public void mouseReleased(MouseEvent event) {
+
                     editMode = EditMode.NONE;
                 }
             });
+
+
             addMouseMotionListener(new MouseAdapter() {
+
                 @Override
                 public void mouseDragged(MouseEvent event) {
+
                     if (editMode != EditMode.NONE) {
+
                         editMap(event);
                     }
                 }
             });
         }
 
+
+        // ======================================
+        // EDIT MAP
+        // ======================================
+
         private void editMap(MouseEvent event) {
+
             int column = event.getX() / TILE_SIZE;
             int row = event.getY() / TILE_SIZE;
+
             if (column < 0 || column >= level.getColumns()
                     || row < 0 || row >= level.getRows()) {
+
                 return;
             }
+
+
+            // ----------------------------------
+            // SET PLAYER SPAWN
+            // ----------------------------------
 
             if (editMode == EditMode.SET_SPAWN) {
+
                 level.setSpawn(column, row);
+
                 settingSpawn = false;
+
                 spawnButton.setSelected(false);
+
                 editMode = EditMode.NONE;
+
                 repaint();
+
                 markChanged();
+
                 return;
             }
+
+
+            // ----------------------------------
+            // PLACE ENEMY
+            // ----------------------------------
 
             if (editMode == EditMode.PLACE_ENEMY) {
-                EnemyType type = (EnemyType) enemySelector.getSelectedItem();
-                if (type != null
-                        && level.setEnemy(type, column, row)) {
-                    repaint();
-                    markChanged();
+
+                EnemyType type =
+                        (EnemyType) enemySelector.getSelectedItem();
+
+                if (type != null) {
+
+                    boolean alreadyExists =
+                            level.getEnemySpawns().stream().anyMatch(
+                                    enemy ->
+                                            enemy.getColumn() == column
+                                                    && enemy.getRow() == row
+                            );
+
+                    if (!alreadyExists) {
+
+                        level.addEnemySpawn(
+                                new EnemySpawn(
+                                        type,
+                                        column,
+                                        row
+                                )
+                        );
+
+                        repaint();
+
+                        markChanged();
+                    }
                 }
+
                 return;
             }
+
+
+            // ----------------------------------
+            // REMOVE ENEMY
+            // ----------------------------------
 
             if (editMode == EditMode.ERASE_ENEMY) {
-                if (level.removeEnemy(column, row)) {
+
+                int previousCount =
+                        level.getEnemySpawns().size();
+
+                level.removeEnemySpawnAt(column, row);
+
+                if (level.getEnemySpawns().size() != previousCount) {
+
                     repaint();
+
                     markChanged();
                 }
+
                 return;
             }
 
+
+            // ----------------------------------
+            // PLACE OR ERASE TILE
+            // ----------------------------------
+
             int newTile;
+
             if (editMode == EditMode.ERASE_TILE) {
+
                 newTile = -1;
+
             } else if (editMode == EditMode.PLACE_TILE) {
+
                 newTile = selectedTile;
+
             } else {
+
                 return;
             }
+
             if (level.getTile(column, row) != newTile) {
-                level.setTile(column, row, newTile);
+
+                level.setTile(
+                        column,
+                        row,
+                        newTile
+                );
+
                 repaint();
+
                 markChanged();
             }
         }
 
+
+        // ======================================
+        // DRAW MAP
+        // ======================================
+
         @Override
         protected void paintComponent(Graphics graphics) {
+
             super.paintComponent(graphics);
+
             Graphics2D g = (Graphics2D) graphics.create();
+
             g.setRenderingHint(
                     RenderingHints.KEY_INTERPOLATION,
                     RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR
             );
+
             drawBackground(g);
 
+
+            // ----------------------------------
+            // DRAW TILES
+            // ----------------------------------
+
             for (int row = 0; row < level.getRows(); row++) {
-                for (int column = 0; column < level.getColumns(); column++) {
+
+                for (int column = 0;
+                        column < level.getColumns();
+                        column++) {
+
                     int x = column * TILE_SIZE;
                     int y = row * TILE_SIZE;
-                    drawTile(g, level.getTile(column, row), x, y);
 
-                    g.setColor(new Color(0, 0, 0, 100));
-                    g.drawRect(x, y, TILE_SIZE, TILE_SIZE);
+                    int tileId = level.getTile(column, row);
+
+                    drawTile(
+                            g,
+                            tileId,
+                            x,
+                            y
+                    );
+
+
+                    // Normal tile grid.
+                    g.setColor(
+                            new Color(0, 0, 0, 100)
+                    );
+
+                    g.drawRect(
+                            x,
+                            y,
+                            TILE_SIZE,
+                            TILE_SIZE
+                    );
+
+
+                    // ----------------------------------
+                    // SOLID TILE HIGHLIGHT
+                    // ----------------------------------
+
+                    if (tileId >= 0
+                            && level.isSolidTile(tileId)) {
+
+                        g.setColor(
+                                new Color(255, 190, 0, 220)
+                        );
+
+                        g.drawRect(
+                                x + 2,
+                                y + 2,
+                                TILE_SIZE - 5,
+                                TILE_SIZE - 5
+                        );
+                    }
                 }
             }
 
+
+            // ----------------------------------
+            // DRAW ENEMIES AND PLAYER SPAWN
+            // ----------------------------------
+
             drawEnemies(g);
+
             drawPlayerSpawn(g);
+
             g.dispose();
         }
 
+
+        // ======================================
+        // DRAW BACKGROUND
+        // ======================================
+
         private void drawBackground(Graphics2D g) {
+
             BufferedImage image = backgrounds
                     .getBackground(level.getBackgroundName())
                     .getImage();
+
             int height = level.getRows() * TILE_SIZE;
+
             int width = Math.max(
                     1,
                     image.getWidth() * height / image.getHeight()
             );
 
             for (int x = 0; x < getWidth(); x += width) {
-                g.drawImage(image, x, 0, width, height, null);
+
+                g.drawImage(
+                        image,
+                        x,
+                        0,
+                        width,
+                        height,
+                        null
+                );
             }
         }
 
-        private void drawTile(Graphics2D g, int tileId, int x, int y) {
+
+        // ======================================
+        // DRAW TILE
+        // ======================================
+
+        private void drawTile(
+                Graphics2D g,
+                int tileId,
+                int x,
+                int y
+        ) {
+
             TileAsset tile = assets.getTile(tileId);
+
             if (tile == null) {
                 return;
             }
+
             if (tile.getImage() != null) {
-                g.drawImage(tile.getImage(), x, y, TILE_SIZE, TILE_SIZE, null);
+
+                g.drawImage(
+                        tile.getImage(),
+                        x,
+                        y,
+                        TILE_SIZE,
+                        TILE_SIZE,
+                        null
+                );
+
             } else {
+
                 g.setColor(tile.getColor());
-                g.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+
+                g.fillRect(
+                        x,
+                        y,
+                        TILE_SIZE,
+                        TILE_SIZE
+                );
             }
         }
 
+
+        // ======================================
+        // DRAW PLAYER SPAWN
+        // ======================================
+
         private void drawPlayerSpawn(Graphics2D g) {
+
             int x = level.getSpawnColumn() * TILE_SIZE;
             int y = level.getSpawnRow() * TILE_SIZE;
+
             playerPreview.setPosition(x, y);
+
             playerPreview.draw(g);
         }
 
+
+        // ======================================
+        // DRAW ENEMIES
+        // ======================================
+
         private void drawEnemies(Graphics2D g) {
+
             for (EnemySpawn spawn : level.getEnemySpawns()) {
-                Enemy enemy = new Enemy(spawn, TILE_SIZE, mobAssets);
+
+                Enemy enemy = new Enemy(
+                        spawn,
+                        TILE_SIZE,
+                        mobAssets
+                );
+
                 enemy.drawPreview(g);
             }
         }
     }
 
+
+    // ==========================================
+    // MAIN
+    // ==========================================
+
     public static void main(String[] args) {
+
         SwingUtilities.invokeLater(() -> {
+
             try {
+
                 new LevelEditor().setVisible(true);
+
             } catch (IOException exception) {
+
                 JOptionPane.showMessageDialog(
                         null,
-                        "Unable to open the editor:\n" + exception.getMessage(),
+                        "Unable to open the editor:\n"
+                                + exception.getMessage(),
                         "Level Editor Error",
                         JOptionPane.ERROR_MESSAGE
                 );
