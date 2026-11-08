@@ -87,8 +87,8 @@ public class LevelEditor extends JFrame {
 
     private JToggleButton spawnButton;
     private JToggleButton enemyButton;
+    private JToggleButton deleteTileButton;
 
-    // Button for changing the selected tile's collision property.
     private JButton collisionButton;
 
 
@@ -103,6 +103,7 @@ public class LevelEditor extends JFrame {
         mobAssets = MobAssets.load();
 
         playerPreview = new Player(0, 0);
+
         playerPreview.setWorldBounds(
                 COLUMNS * TILE_SIZE,
                 ROWS * TILE_SIZE
@@ -292,7 +293,26 @@ public class LevelEditor extends JFrame {
 
         enemyButton = new JToggleButton("Place Enemy");
 
+        // NEW: DELETE TILE BUTTON
+        deleteTileButton = new JToggleButton("Delete Tile");
+
+        deleteTileButton.addActionListener(event -> {
+
+            settingSpawn = false;
+            settingEnemy = false;
+
+            spawnButton.setSelected(false);
+            enemyButton.setSelected(false);
+
+            statusLabel.setText(
+                    deleteTileButton.isSelected()
+                            ? "Delete mode: Click or drag over tiles to erase them."
+                            : "Choose a resource to paint."
+            );
+        });
+
         enemySelector = new JComboBox<>(EnemyType.values());
+
 
         // --------------------------------------
         // SOLID TILE BUTTON
@@ -305,7 +325,6 @@ public class LevelEditor extends JFrame {
             boolean currentlySolid =
                     level.isSolidTile(selectedTile);
 
-            // Toggle the selected tile's collision setting.
             level.setTileSolid(
                     selectedTile,
                     !currentlySolid
@@ -377,6 +396,7 @@ public class LevelEditor extends JFrame {
             settingEnemy = false;
 
             enemyButton.setSelected(false);
+            deleteTileButton.setSelected(false);
 
             statusLabel.setText(
                     settingSpawn
@@ -397,6 +417,7 @@ public class LevelEditor extends JFrame {
             settingSpawn = false;
 
             spawnButton.setSelected(false);
+            deleteTileButton.setSelected(false);
 
             statusLabel.setText(
                     settingEnemy
@@ -426,9 +447,12 @@ public class LevelEditor extends JFrame {
         assetRow.add(new JLabel("Background:"));
         assetRow.add(backgroundSelector);
         assetRow.add(spawnButton);
+        assetRow.add(deleteTileButton);
 
         assetRow.add(
-                new JLabel("Left click: place | Right click: erase")
+                new JLabel(
+                        "Left click: place | Right click: erase"
+                )
         );
 
         assetRow.add(
@@ -565,6 +589,7 @@ public class LevelEditor extends JFrame {
 
                 spawnButton.setSelected(false);
                 enemyButton.setSelected(false);
+                deleteTileButton.setSelected(false);
 
                 updateCollisionButton();
 
@@ -889,11 +914,7 @@ public class LevelEditor extends JFrame {
             }
         }
 
-        // Remove all enemy spawn positions.
         level.clearEnemySpawns();
-
-        // Keep solid tile type settings.
-        // These are properties of tile types, not placed tiles.
 
         editorPanel.repaint();
 
@@ -982,6 +1003,11 @@ public class LevelEditor extends JFrame {
                                 SwingUtilities.isRightMouseButton(event)
                                         ? EditMode.ERASE_ENEMY
                                         : EditMode.PLACE_ENEMY;
+
+                    } else if (deleteTileButton.isSelected()) {
+
+                        // NEW: LEFT CLICK ERASES WHEN DELETE MODE IS ON.
+                        editMode = EditMode.ERASE_TILE;
 
                     } else {
 
@@ -1191,7 +1217,7 @@ public class LevelEditor extends JFrame {
                     );
 
 
-                    // Normal tile grid.
+                    // NORMAL TILE GRID
                     g.setColor(
                             new Color(0, 0, 0, 100)
                     );
@@ -1204,10 +1230,7 @@ public class LevelEditor extends JFrame {
                     );
 
 
-                    // ----------------------------------
                     // SOLID TILE HIGHLIGHT
-                    // ----------------------------------
-
                     if (tileId >= 0
                             && level.isSolidTile(tileId)) {
 
