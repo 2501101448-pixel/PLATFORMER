@@ -71,6 +71,7 @@ public class LevelEditor extends JFrame {
     private boolean settingEnemy;
     private JToggleButton spawnButton;
     private JToggleButton enemyButton;
+    private JToggleButton rectangleFillButton;
     private JComboBox<EnemyType> enemySelector;
 
     public LevelEditor() throws IOException {
@@ -180,6 +181,7 @@ public class LevelEditor extends JFrame {
         });
         spawnButton = new JToggleButton("Set Player Spawn");
         enemyButton = new JToggleButton("Place Enemy");
+        rectangleFillButton = new JToggleButton("Fill Rectangle");
         enemySelector = new JComboBox<>(EnemyType.values());
 
         saveButton.addActionListener(event -> {
@@ -198,6 +200,7 @@ public class LevelEditor extends JFrame {
             settingSpawn = spawnButton.isSelected();
             settingEnemy = false;
             enemyButton.setSelected(false);
+            rectangleFillButton.setSelected(false);
             statusLabel.setText(settingSpawn
                     ? "Click a map cell to place the player spawn."
                     : "Choose a resource to paint.");
@@ -206,8 +209,18 @@ public class LevelEditor extends JFrame {
             settingEnemy = enemyButton.isSelected();
             settingSpawn = false;
             spawnButton.setSelected(false);
+            rectangleFillButton.setSelected(false);
             statusLabel.setText(settingEnemy
                     ? "Click a map cell to place an enemy."
+                    : "Choose a resource to paint.");
+        });
+        rectangleFillButton.addActionListener(event -> {
+            settingSpawn = false;
+            settingEnemy = false;
+            spawnButton.setSelected(false);
+            enemyButton.setSelected(false);
+            statusLabel.setText(rectangleFillButton.isSelected()
+                    ? "Drag over the map to fill a rectangle with the selected tile."
                     : "Choose a resource to paint.");
         });
 
@@ -221,6 +234,7 @@ public class LevelEditor extends JFrame {
         assetRow.add(new JLabel("Background:"));
         assetRow.add(backgroundSelector);
         assetRow.add(spawnButton);
+        assetRow.add(rectangleFillButton);
         assetRow.add(new JLabel("Left click: place | Right click: erase"));
         assetRow.add(new JLabel("Map: " + COLUMNS + " x " + ROWS
                 + " tiles, " + TILE_SIZE + " x " + TILE_SIZE
@@ -248,6 +262,9 @@ public class LevelEditor extends JFrame {
         JPanel assetPicker = new JPanel(new BorderLayout(6, 6));
         JList<TileAsset> tileList = new JList<>(paletteItems);
         tileList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        // Fixed row sizes let Swing show large categories without measuring every tile.
+        tileList.setFixedCellHeight(46);
+        tileList.setFixedCellWidth(215);
         tileList.setCellRenderer((list, tile, index, selected, focused) -> {
             JLabel item = new JLabel(tile.getName(), createTileIcon(tile), 2);
             item.setOpaque(true);
@@ -262,6 +279,7 @@ public class LevelEditor extends JFrame {
                 settingEnemy = false;
                 spawnButton.setSelected(false);
                 enemyButton.setSelected(false);
+                rectangleFillButton.setSelected(false);
                 statusLabel.setText(
                         "Selected: " + tileList.getSelectedValue().getName()
                 );
@@ -286,9 +304,8 @@ public class LevelEditor extends JFrame {
         if (category == null) {
             return;
         }
-        for (TileAsset tile : assets.getTiles(category)) {
-            paletteItems.addElement(tile);
-        }
+        // Add the whole category at once so the list updates only once.
+        paletteItems.addAll(assets.getTiles(category));
         if (!paletteItems.isEmpty()) {
             tileList.setSelectedIndex(0);
         }
@@ -442,10 +459,16 @@ public class LevelEditor extends JFrame {
             NONE,
             PLACE_TILE,
             ERASE_TILE,
+            FILL_RECTANGLE,
             SET_SPAWN,
             PLACE_ENEMY,
             ERASE_ENEMY
         }
+
+        private int fillStartColumn = -1;
+        private int fillStartRow = -1;
+        private int fillEndColumn = -1;
+        private int fillEndRow = -1;
 
         private EditorPanel() {
             setBackground(new Color(45, 45, 45));
@@ -462,27 +485,93 @@ public class LevelEditor extends JFrame {
                         editMode = SwingUtilities.isRightMouseButton(event)
                                 ? EditMode.ERASE_ENEMY
                                 : EditMode.PLACE_ENEMY;
+                    } else if (rectangleFillButton.isSelected()
+                            && SwingUtilities.isLeftMouseButton(event)) {
+                        editMode = EditMode.FILL_RECTANGLE;
                     } else {
                         editMode = SwingUtilities.isRightMouseButton(event)
                                 ? EditMode.ERASE_TILE
                                 : EditMode.PLACE_TILE;
                     }
+
+                    if (editMode == EditMode.FILL_RECTANGLE) {
+                        fillStartColumn = event.getX() / TILE_SIZE;
+                        fillStartRow = event.getY() / TILE_SIZE;
+                        if (!isInsideMap(fillStartColumn, fillStartRow)) {
+                            editMode = EditMode.NONE;
+                            return;
+                        }
+                        fillEndColumn = fillStartColumn;
+                        fillEndRow = fillStartRow;
+                        repaint();
+                        return;
+                    }
+
                     editMap(event);
                 }
 
                 @Override
                 public void mouseReleased(MouseEvent event) {
+                    if (editMode == EditMode.FILL_RECTANGLE) {
+                        updateFillEnd(event);
+                        fillSelectedRectangle();
+                        fillStartColumn = -1;
+                        fillStartRow = -1;
+                        repaint();
+                    }
                     editMode = EditMode.NONE;
                 }
             });
             addMouseMotionListener(new MouseAdapter() {
                 @Override
                 public void mouseDragged(MouseEvent event) {
-                    if (editMode != EditMode.NONE) {
+                    if (editMode == EditMode.FILL_RECTANGLE) {
+                        updateFillEnd(event);
+                        repaint();
+                    } else if (editMode != EditMode.NONE) {
                         editMap(event);
                     }
                 }
             });
+        }
+
+        private boolean isInsideMap(int column, int row) {
+            return column >= 0 && column < level.getColumns()
+                    && row >= 0 && row < level.getRows();
+        }
+
+        private void updateFillEnd(MouseEvent event) {
+            // Keep the dragged edge inside the level, even if the mouse leaves the map.
+            fillEndColumn = Math.max(0, Math.min(
+                    event.getX() / TILE_SIZE,
+                    level.getColumns() - 1
+            ));
+            fillEndRow = Math.max(0, Math.min(
+                    event.getY() / TILE_SIZE,
+                    level.getRows() - 1
+            ));
+        }
+
+        private void fillSelectedRectangle() {
+            int firstColumn = Math.min(fillStartColumn, fillEndColumn);
+            int lastColumn = Math.max(fillStartColumn, fillEndColumn);
+            int firstRow = Math.min(fillStartRow, fillEndRow);
+            int lastRow = Math.max(fillStartRow, fillEndRow);
+            boolean changed = false;
+
+            // Fill every cell between the drag's start and end points.
+            for (int row = firstRow; row <= lastRow; row++) {
+                for (int column = firstColumn; column <= lastColumn; column++) {
+                    if (level.getTile(column, row) != selectedTile) {
+                        level.setTile(column, row, selectedTile);
+                        changed = true;
+                    }
+                }
+            }
+
+            if (changed) {
+                markChanged();
+            }
         }
 
         private void editMap(MouseEvent event) {
@@ -557,9 +646,31 @@ public class LevelEditor extends JFrame {
                 }
             }
 
+            drawFillSelection(g);
             drawEnemies(g);
             drawPlayerSpawn(g);
             g.dispose();
+        }
+
+        private void drawFillSelection(Graphics2D g) {
+            if (editMode != EditMode.FILL_RECTANGLE) {
+                return;
+            }
+
+            int firstColumn = Math.min(fillStartColumn, fillEndColumn);
+            int lastColumn = Math.max(fillStartColumn, fillEndColumn);
+            int firstRow = Math.min(fillStartRow, fillEndRow);
+            int lastRow = Math.max(fillStartRow, fillEndRow);
+            int x = firstColumn * TILE_SIZE;
+            int y = firstRow * TILE_SIZE;
+            int width = (lastColumn - firstColumn + 1) * TILE_SIZE;
+            int height = (lastRow - firstRow + 1) * TILE_SIZE;
+
+            // Show the area that will be filled before the mouse is released.
+            g.setColor(new Color(50, 130, 255, 70));
+            g.fillRect(x, y, width, height);
+            g.setColor(new Color(50, 130, 255));
+            g.drawRect(x, y, width, height);
         }
 
         private void drawBackground(Graphics2D g) {

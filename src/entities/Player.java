@@ -68,7 +68,7 @@ public class Player extends Entity {
 
     // CONSTRUCTOR
     public Player(float x, float y) {
-        super(x, y);
+        super(x, y, 64, 64);
 
         loadAnimations();
 
@@ -629,7 +629,7 @@ public class Player extends Entity {
             updateAnimation();
             return;
         }
-
+        updateHitbox();
         updatePosition();
         updateJump();
         updateDash();

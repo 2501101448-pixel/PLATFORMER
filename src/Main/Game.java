@@ -141,7 +141,7 @@ public class Game implements Runnable {
 
         for (int i = enemies.size() - 1; i >= 0; i--) {
             Enemy enemy = enemies.get(i);
-            enemy.update(player);
+            enemy.update(player, 1f / UPS_SET);
             if (enemy.isDefeated()) {
                 enemies.remove(i);
             }
