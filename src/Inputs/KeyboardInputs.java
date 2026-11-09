@@ -12,20 +12,21 @@ public class KeyboardInputs implements KeyListener {
 
     private final GamePanel gamePanel;
 
-    private boolean leftPressed;
-    private boolean rightPressed;
-    private boolean upPressed;
-    private boolean downPressed;
+    private volatile boolean leftPressed;
+    private volatile boolean rightPressed;
 
     private boolean spacePressed;
-    private boolean shiftPressed;
+    private volatile boolean shiftPressed;
     private boolean blockPressed;
 
     public KeyboardInputs(GamePanel gamePanel) {
         this.gamePanel = gamePanel;
     }
 
+    // ==========================================
     // KEY PRESSED
+    // ==========================================
+
     @Override
     public void keyPressed(KeyEvent e) {
 
@@ -41,16 +42,6 @@ public class KeyboardInputs implements KeyListener {
                 updateMovement();
                 break;
 
-            case KeyEvent.VK_W:
-                upPressed = true;
-                updateMovement();
-                break;
-
-            case KeyEvent.VK_S:
-                downPressed = true;
-                updateMovement();
-                break;
-
             case KeyEvent.VK_SHIFT:
                 shiftPressed = true;
                 updateMovement();
@@ -58,10 +49,12 @@ public class KeyboardInputs implements KeyListener {
 
             // JUMP / DOUBLE JUMP
             case KeyEvent.VK_SPACE:
+
                 if (!spacePressed) {
                     spacePressed = true;
                     gamePanel.jump();
                 }
+
                 break;
 
             // NORMAL ATTACK
@@ -81,10 +74,12 @@ public class KeyboardInputs implements KeyListener {
 
             // BLOCK
             case KeyEvent.VK_B:
+
                 if (!blockPressed) {
                     blockPressed = true;
                     gamePanel.startBlock();
                 }
+
                 break;
 
             // TEST HIT
@@ -109,29 +104,41 @@ public class KeyboardInputs implements KeyListener {
         }
     }
 
+    // ==========================================
     // UPDATE MOVEMENT
+    // ==========================================
+
     private void updateMovement() {
 
         gamePanel.setRunning(shiftPressed);
 
         if (leftPressed) {
+
             gamePanel.setDirection(LEFT);
 
         } else if (rightPressed) {
+
             gamePanel.setDirection(RIGHT);
 
-        } else if (upPressed) {
-            gamePanel.setDirection(UP);
-
-        } else if (downPressed) {
-            gamePanel.setDirection(DOWN);
-
         } else {
+
             gamePanel.setMoving(false);
         }
     }
 
+    // ==========================================
+    // CONTINUOUS INPUT UPDATE
+    // ==========================================
+
+    // Called by Game.update() every game tick.
+    public void update() {
+        updateMovement();
+    }
+
+    // ==========================================
     // KEY RELEASED
+    // ==========================================
+
     @Override
     public void keyReleased(KeyEvent e) {
 
@@ -144,16 +151,6 @@ public class KeyboardInputs implements KeyListener {
 
             case KeyEvent.VK_D:
                 rightPressed = false;
-                updateMovement();
-                break;
-
-            case KeyEvent.VK_W:
-                upPressed = false;
-                updateMovement();
-                break;
-
-            case KeyEvent.VK_S:
-                downPressed = false;
                 updateMovement();
                 break;
 
@@ -175,6 +172,6 @@ public class KeyboardInputs implements KeyListener {
 
     @Override
     public void keyTyped(KeyEvent e) {
-        // Not used
+        // Not used.
     }
 }

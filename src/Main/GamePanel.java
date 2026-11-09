@@ -5,6 +5,7 @@ import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+
 import javax.swing.JPanel;
 
 import Inputs.KeyboardInputs;
@@ -17,17 +18,21 @@ public class GamePanel extends JPanel {
 
     private final int GAME_WIDTH = 1280;
     private final int GAME_HEIGHT = 800;
-    
 
     private Game game;
 
+    // Store the keyboard input object as a field.
+    // Game can now access it through updateInput().
+    private KeyboardInputs keyboardInputs;
+
     public GamePanel(Game game) {
+
         this.game = game;
 
         setPanelSize();
         setBackground(new Color(45, 55, 80));
 
-        KeyboardInputs keyboardInputs = new KeyboardInputs(this);
+        keyboardInputs = new KeyboardInputs(this);
         MouseInputs mouseInputs = new MouseInputs(this);
 
         addKeyListener(keyboardInputs);
@@ -38,8 +43,12 @@ public class GamePanel extends JPanel {
         setFocusTraversalKeysEnabled(false);
     }
 
+    // ==========================================
     // PANEL SIZE
+    // ==========================================
+
     private void setPanelSize() {
+
         Dimension size = new Dimension(GAME_WIDTH, GAME_HEIGHT);
 
         setPreferredSize(size);
@@ -47,21 +56,37 @@ public class GamePanel extends JPanel {
         setMaximumSize(size);
     }
 
+    // ==========================================
+    // CONTINUOUS INPUT UPDATE
+    // ==========================================
+
+    public void updateInput() {
+
+        if (keyboardInputs != null) {
+            keyboardInputs.update();
+        }
+    }
+
+    // ==========================================
     // DRAW GAME
+    // ==========================================
+
     @Override
     protected void paintComponent(Graphics g) {
+
         super.paintComponent(g);
 
         Graphics2D g2 = (Graphics2D) g.create();
-
-
 
         game.render(g2);
 
         g2.dispose();
     }
 
+    // ==========================================
     // PLAYER MOVEMENT
+    // ==========================================
+
     public void setDirection(int direction) {
         game.getPlayer().setDirection(direction);
     }
@@ -74,7 +99,10 @@ public class GamePanel extends JPanel {
         game.getPlayer().setRunning(running);
     }
 
+    // ==========================================
     // PLAYER ACTIONS
+    // ==========================================
+
     public void jump() {
         game.getPlayer().jump();
     }
@@ -103,7 +131,10 @@ public class GamePanel extends JPanel {
         game.getPlayer().playHitAnimation();
     }
 
+    // ==========================================
     // TEST ANIMATIONS
+    // ==========================================
+
     public void playGroundAnimation() {
         game.getPlayer().playGroundAnimation();
     }
@@ -116,7 +147,10 @@ public class GamePanel extends JPanel {
         game.getPlayer().playVictoryAnimation();
     }
 
+    // ==========================================
     // GETTERS
+    // ==========================================
+
     public Game getGame() {
         return game;
     }

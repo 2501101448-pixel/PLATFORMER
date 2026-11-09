@@ -1,9 +1,11 @@
+
 package entities;
 
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 
+import levels.Level;
 import utils.LoadSave;
 
 import static utils.Constants.Directions.*;
@@ -11,18 +13,49 @@ import static utils.Constants.PlayerConstants.*;
 
 public class Player extends Entity {
 
-    // SPRITE ANIMATIONS
     private BufferedImage[][] animations;
 
     private final int drawWidth = 64;
     private final int drawHeight = 64;
 
-    // MOVEMENT
-    private final int walkSpeed = 1;
-    private final int runSpeed = 2;
+    // ==========================================
+    // MOVEMENT SETTINGS
+    // ==========================================
+
+    // Maximum horizontal speeds, measured per update.
+    // Maximum horizontal movement speed
+    private final float walkSpeed = 1.5f;
+    private final float runSpeed = 2.0f;
+    private final float airSpeed = 1.4f;
+
+    // How quickly the player reaches the target speed
+    private final float groundAcceleration = 0.18f;
+    private final float airAcceleration = 0.10f;
+
+    // How quickly the player slows down
+    private final float groundFriction = 0.25f;
+    private final float airFriction = 0.05f;
+
+    // Horizontal velocity.
+    private float velocityX = 0f;
 
     private int worldWidth = 1280;
-    private int worldHeight = 800;
+
+    private Level level;
+
+    // ==========================================
+    // COLLISION BOX
+    // ==========================================
+
+    private static final float COLLISION_OFFSET_X = 16f;
+    private static final float COLLISION_OFFSET_Y = 8f;
+
+    private static final float COLLISION_WIDTH = 32f;
+    private static final float COLLISION_HEIGHT = 48f;
+
+    // ==========================================
+    // MOVEMENT STATE
+    // ==========================================
 
     private boolean moving = false;
     private boolean running = false;
@@ -30,8 +63,12 @@ public class Player extends Entity {
 
     private int playerDir = RIGHT;
 
+    // ==========================================
     // ANIMATION
+    // ==========================================
+
     private int playerAction = IDLE;
+
     private int aniIndex = 0;
     private int aniTick = 0;
 
@@ -41,32 +78,55 @@ public class Player extends Entity {
 
     private boolean animationLoop = true;
 
+    // ==========================================
     // PLAYER STATES
+    // ==========================================
+
     private boolean attacking = false;
+    private boolean hitStunned = false;
+
     private int attackCount;
+
     private boolean blocking = false;
     private boolean dead = false;
     private boolean victorious = false;
 
-    // JUMP SYSTEM
+    // ==========================================
+    // JUMP SETTINGS
+    // ==========================================
+
     private int jumpsUsed = 0;
+
     private final int MAX_JUMPS = 2;
 
-    private float jumpOffset = 0;
-    private float velocityY = 0;
+    private float velocityY = 0f;
 
-    private final float jumpStrength = -9.5f;
-    private final float gravity = 0.45f;
+    private final float jumpStrength = -7.0f;
+    private final float gravity = 0.15f;
+    private final float maxFallSpeed = 3.5f;
 
     private boolean onGround = true;
 
-    // DASH SYSTEM
+    // Coyote time and jump buffering.
+    private final int COYOTE_TIME = 10;
+    private final int JUMP_BUFFER_TIME = 10;
+
+    private int coyoteTimer = 0;
+    private int jumpBufferTimer = 0;
+
+    // ==========================================
+    // DASH SETTINGS
+    // ==========================================
+
     private int dashTimer = 0;
 
     private final int DASH_DURATION = 20;
     private final int DASH_SPEED = 5;
 
+    // ==========================================
     // CONSTRUCTOR
+    // ==========================================
+
     public Player(float x, float y) {
         super(x, y, 64, 64);
 
@@ -79,7 +139,18 @@ public class Player extends Entity {
         }
     }
 
+    // ==========================================
+    // LEVEL
+    // ==========================================
+
+    public void setLevel(Level level) {
+        this.level = level;
+    }
+
+    // ==========================================
     // LOAD ANIMATIONS
+    // ==========================================
+
     private void loadAnimations() {
 
         animations = LoadSave.GetAnimations();
@@ -93,7 +164,7 @@ public class Player extends Entity {
         if (!hasAnyAnimation()) {
             System.err.println(
                     "ERROR: No animation frames were loaded. "
-                    + "Check your sprite path, frame size, and Constants."
+                    + "Check your sprite path and frame size."
             );
         }
     }
@@ -120,7 +191,10 @@ public class Player extends Entity {
         return IDLE;
     }
 
-    // CHECK ANIMATION
+    // ==========================================
+    // ANIMATION CHECKS
+    // ==========================================
+
     private boolean hasAnimation(int action) {
 
         if (animations == null
@@ -170,7 +244,6 @@ public class Player extends Entity {
             return frames[aniIndex];
         }
 
-        // Use another valid frame if the current one is unavailable.
         for (BufferedImage frame : frames) {
             if (frame != null) {
                 return frame;
@@ -184,54 +257,186 @@ public class Player extends Entity {
         return dead || victorious;
     }
 
+    // ==========================================
     // WORLD BOUNDARIES
+    // ==========================================
+
     public void setWorldBounds(int width, int height) {
-
         worldWidth = Math.max(0, width);
-        worldHeight = Math.max(0, height);
-
         keepInsideWorld();
     }
 
     public void setPosition(float x, float y) {
+
         this.x = x;
         this.y = y;
+
+        velocityX = 0;
+        velocityY = 0;
+
+        jumpsUsed = 0;
+        jumpBufferTimer = 0;
+        coyoteTimer = 0;
+
+        onGround = false;
+
         keepInsideWorld();
     }
 
     private void keepInsideWorld() {
 
         int maxX = Math.max(0, worldWidth - drawWidth);
-        int maxY = Math.max(0, worldHeight - drawHeight);
 
-        x = Math.max(0, Math.min(x, maxX));
-        y = Math.max(0, Math.min(y, maxY));
+        if (x < 0) {
+            x = 0;
+            velocityX = 0;
+        }
+
+        if (x > maxX) {
+            x = maxX;
+            velocityX = 0;
+        }
     }
 
-    // MOVEMENT
+    // ==========================================
+    // TILE COLLISION
+    // ==========================================
+
+    private boolean collidesAt(float testX, float testY) {
+
+        if (level == null) {
+            return false;
+        }
+
+        float left = testX + COLLISION_OFFSET_X;
+        float right = left + COLLISION_WIDTH - 0.01f;
+
+        float top = testY + COLLISION_OFFSET_Y;
+        float bottom = top + COLLISION_HEIGHT - 0.01f;
+
+        int tileSize = level.getTileSize();
+
+        int leftColumn = (int) Math.floor(left / tileSize);
+        int rightColumn = (int) Math.floor(right / tileSize);
+
+        int topRow = (int) Math.floor(top / tileSize);
+        int bottomRow = (int) Math.floor(bottom / tileSize);
+
+        for (int row = topRow; row <= bottomRow; row++) {
+
+            for (int column = leftColumn;
+                    column <= rightColumn;
+                    column++) {
+
+                if (level.isSolidAt(column, row)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    // ==========================================
+    // HORIZONTAL COLLISION
+    // ==========================================
+
+    private void moveHorizontally(float amount) {
+
+        if (amount == 0) {
+            return;
+        }
+
+        float direction = Math.signum(amount);
+        float remaining = Math.abs(amount);
+
+        while (remaining > 0) {
+
+            float step = Math.min(1f, remaining);
+            float nextX = x + direction * step;
+
+            if (collidesAt(nextX, y)) {
+                velocityX = 0;
+                break;
+            }
+
+            x = nextX;
+            remaining -= step;
+        }
+
+        keepInsideWorld();
+    }
+
+    // ==========================================
+    // VERTICAL COLLISION
+    // ==========================================
+
+    private void moveVertically(float amount) {
+
+        if (amount == 0) {
+            return;
+        }
+
+        float direction = Math.signum(amount);
+        float remaining = Math.abs(amount);
+
+        while (remaining > 0) {
+
+            float step = Math.min(1f, remaining);
+            float nextY = y + direction * step;
+
+            if (collidesAt(x, nextY)) {
+
+                velocityY = 0;
+
+                if (direction > 0) {
+
+                    onGround = true;
+                    jumpsUsed = 0;
+
+                    // Reset coyote time after landing.
+                    coyoteTimer = COYOTE_TIME;
+
+                    // Do not interrupt an ongoing attack.
+                    if (!attacking && !blocking && !hitStunned
+                            && dashTimer <= 0) {
+                        playAnimation(LAND, false);
+                    }
+                }
+
+                return;
+            }
+
+            y = nextY;
+            remaining -= step;
+        }
+
+        if (direction > 0) {
+            onGround = false;
+        }
+    }
+
+    // ==========================================
+    // MOVEMENT INPUT
+    // ==========================================
+
     public void setDirection(int direction) {
 
         if (isLocked()) {
             return;
         }
 
-        if (direction != LEFT
-                && direction != RIGHT
-                && direction != UP
-                && direction != DOWN) {
+        if (direction != LEFT && direction != RIGHT) {
             return;
         }
 
         playerDir = direction;
         moving = true;
 
-        if (direction == LEFT) {
-            facingLeft = true;
-        } else if (direction == RIGHT) {
-            facingLeft = false;
-        }
+        facingLeft = direction == LEFT;
 
-        if (onGround && !attacking && !blocking && dashTimer <= 0) {
+        if (onGround && !attacking && !blocking
+                && dashTimer <= 0 && !hitStunned) {
             selectNormalAnimation();
         }
     }
@@ -240,126 +445,234 @@ public class Player extends Entity {
 
         this.moving = moving;
 
-        if (!moving && onGround && !attacking && !blocking) {
+        if (!moving && onGround && !attacking
+                && !blocking && !hitStunned) {
             selectNormalAnimation();
         }
     }
 
     public void setRunning(boolean running) {
+
         this.running = running;
 
-        if (onGround && moving && !attacking && !blocking) {
+        if (onGround && moving && !attacking
+                && !blocking && !hitStunned) {
             selectNormalAnimation();
         }
     }
 
+    // ==========================================
+    // ACCELERATION AND FRICTION
+    // ==========================================
+
     private void updatePosition() {
 
-        if (!moving || isLocked() || dashTimer > 0
-                || attacking || blocking) {
+        if (isLocked() || dashTimer > 0
+                || blocking || hitStunned) {
             return;
         }
 
-        int speed = running ? runSpeed : walkSpeed;
+        float targetSpeed = 0f;
 
-        switch (playerDir) {
+        // Determine the target horizontal speed.
+        if (moving) {
 
-            case LEFT:
-                x -= speed;
-                break;
+            if (onGround) {
+                targetSpeed = running ? runSpeed : walkSpeed;
+            } else {
+                targetSpeed = airSpeed;
+            }
 
-            case RIGHT:
-                x += speed;
-                break;
-
-            case UP:
-                y -= speed;
-                break;
-
-            case DOWN:
-                y += speed;
-                break;
-
-            default:
-                break;
+            if (playerDir == LEFT) {
+                targetSpeed *= -1;
+            }
         }
 
-        keepInsideWorld();
+        // Choose ground or air physics.
+        float acceleration = onGround
+                ? groundAcceleration
+                : airAcceleration;
+
+        float friction = onGround
+                ? groundFriction
+                : airFriction;
+
+        if (moving) {
+
+            // Accelerate toward the desired speed.
+            velocityX = approach(
+                    velocityX,
+                    targetSpeed,
+                    acceleration
+            );
+
+        } else {
+
+            // Gradually slow down when no direction is pressed.
+            velocityX = approach(
+                    velocityX,
+                    0f,
+                    friction
+            );
+        }
+
+        // Prevent extremely small leftover movement.
+        if (Math.abs(velocityX) < 0.01f) {
+            velocityX = 0f;
+        }
+
+        // Move using tile collision.
+        moveHorizontally(velocityX);
     }
 
-    // JUMP AND DOUBLE JUMP
+    // Moves a value toward a target without overshooting.
+    private float approach(float current, float target, float amount) {
+
+        if (current < target) {
+            return Math.min(current + amount, target);
+        }
+
+        if (current > target) {
+            return Math.max(current - amount, target);
+        }
+
+        return target;
+    }
+
+    // ==========================================
+    // JUMP INPUT
+    // ==========================================
+
     public void jump() {
 
-        if (isLocked() || attacking || blocking || dashTimer > 0) {
+        if (isLocked() || attacking || blocking
+                || dashTimer > 0 || hitStunned) {
             return;
         }
 
-        if (jumpsUsed >= MAX_JUMPS) {
-            return;
-        }
+        // Store the jump request for a short time.
+        jumpBufferTimer = JUMP_BUFFER_TIME;
+    }
+
+    // ==========================================
+    // PERFORM JUMP
+    // ==========================================
+
+    private void performJump() {
 
         jumpsUsed++;
 
         velocityY = jumpStrength;
         onGround = false;
 
+        // A successful jump consumes coyote time.
+        coyoteTimer = 0;
+
         if (jumpsUsed == 1) {
+
             playAnimation(JUMP, false);
             System.out.println("First Jump!");
 
         } else {
+
             playAnimation(DOUBLE_JUMP, false);
             System.out.println("Double Jump!");
         }
     }
 
+    // ==========================================
+    // JUMP PHYSICS
+    // ==========================================
+
     private void updateJump() {
 
-        if (onGround || isLocked()) {
+        if (isLocked()) {
             return;
         }
 
-        jumpOffset += velocityY;
-        velocityY += gravity;
-
-        if (velocityY > 0
-                && playerAction != JUMP
-                && playerAction != DOUBLE_JUMP
-                && playerAction != FALL) {
-            playAnimation(FALL, true);
+        // Check whether the player walked off a platform.
+        if (onGround && !collidesAt(x, y + 1f)) {
+            onGround = false;
         }
 
-        // Landing
-        if (jumpOffset >= 0) {
+        // Refresh coyote time while grounded.
+        if (onGround) {
+            coyoteTimer = COYOTE_TIME;
+        } else if (coyoteTimer > 0) {
+            coyoteTimer--;
+        }
 
-            jumpOffset = 0;
-            velocityY = 0;
+        // Process buffered jump input.
+        if (jumpBufferTimer > 0) {
 
-            onGround = true;
-            jumpsUsed = 0;
+            if ((onGround || coyoteTimer > 0)
+                    && jumpsUsed == 0) {
 
-            playAnimation(LAND, false);
+                performJump();
+                jumpBufferTimer = 0;
+
+            } else if (!onGround && jumpsUsed == 1) {
+
+                performJump();
+                jumpBufferTimer = 0;
+            }
+
+        } else if (jumpBufferTimer < 0) {
+            jumpBufferTimer = 0;
+        }
+
+        // Count down the jump buffer.
+        if (jumpBufferTimer > 0) {
+            jumpBufferTimer--;
+        }
+
+        if (onGround) {
+            return;
+        }
+
+        // Apply gravity.
+        velocityY += gravity;
+        velocityY = Math.min(velocityY, maxFallSpeed);
+
+        moveVertically(velocityY);
+
+        // Switch to falling animation.
+        if (velocityY > 0 && !onGround
+                && !attacking && playerAction != FALL) {
+            playAnimation(FALL, true);
         }
     }
 
+    // ==========================================
     // NORMAL ATTACK
+    // ==========================================
+
     public void attack() {
 
-        if (isLocked() || blocking || attacking || dashTimer > 0) {
+        if (isLocked() || blocking || attacking
+                || dashTimer > 0 || hitStunned) {
+            return;
+        }
+
+        if (!hasAnimation(ATTACK)) {
+            System.err.println("ERROR: ATTACK animation is missing.");
             return;
         }
 
         attacking = true;
-        moving = false;
         attackCount++;
 
         playAnimation(ATTACK, false);
     }
 
+    // ==========================================
     // BLOCK
+    // ==========================================
+
     public void startBlock() {
 
-        if (isLocked() || attacking || dashTimer > 0) {
+        if (isLocked() || attacking || dashTimer > 0
+                || hitStunned) {
             return;
         }
 
@@ -380,27 +693,34 @@ public class Player extends Entity {
 
         blocking = false;
 
-        if (!isLocked() && !attacking) {
+        if (!isLocked() && !attacking && !hitStunned) {
             selectNormalAnimation();
         }
     }
 
+    // ==========================================
     // HIT ANIMATION
+    // ==========================================
+
     public void playHitAnimation() {
 
-        if (isLocked() || attacking || blocking) {
+        if (isLocked() || attacking || blocking || hitStunned) {
             return;
         }
 
+        hitStunned = true;
         moving = false;
 
         playAnimation(HIT, false);
     }
 
+    // ==========================================
     // GROUND ANIMATION
+    // ==========================================
+
     public void playGroundAnimation() {
 
-        if (isLocked() || attacking || blocking) {
+        if (isLocked() || attacking || blocking || hitStunned) {
             return;
         }
 
@@ -410,14 +730,20 @@ public class Player extends Entity {
         playAnimation(GROUND, false);
     }
 
+    // ==========================================
     // DASH
+    // ==========================================
+
     public void dash() {
 
-        if (isLocked() || attacking || blocking || dashTimer > 0) {
+        if (isLocked() || attacking || blocking
+                || dashTimer > 0 || hitStunned) {
             return;
         }
 
         moving = false;
+        velocityX = 0f;
+
         dashTimer = DASH_DURATION;
 
         playAnimation(DASH, false);
@@ -431,28 +757,39 @@ public class Player extends Entity {
 
         int direction = facingLeft ? -1 : 1;
 
-        x += direction * DASH_SPEED;
-
-        keepInsideWorld();
+        moveHorizontally(direction * DASH_SPEED);
 
         dashTimer--;
     }
 
+    // ==========================================
     // SPECIAL ATTACK
+    // ==========================================
+
     public void specialAttack() {
 
-        if (isLocked() || attacking || blocking || dashTimer > 0) {
+        if (isLocked() || attacking || blocking
+                || dashTimer > 0 || hitStunned) {
             return;
         }
 
-        moving = false;
+        if (!hasAnimation(SPECIAL_ATTACK)) {
+            System.err.println(
+                    "ERROR: SPECIAL_ATTACK animation is missing."
+            );
+            return;
+        }
+
         attacking = true;
         attackCount++;
 
         playAnimation(SPECIAL_ATTACK, false);
     }
 
+    // ==========================================
     // DEATH
+    // ==========================================
+
     public void playDeathAnimation() {
 
         if (dead || victorious) {
@@ -461,14 +798,21 @@ public class Player extends Entity {
 
         dead = true;
         moving = false;
+        velocityX = 0f;
+
         attacking = false;
         blocking = false;
+        hitStunned = false;
+
         dashTimer = 0;
 
         playAnimation(DEATH, false);
     }
 
+    // ==========================================
     // VICTORY
+    // ==========================================
+
     public void playVictoryAnimation() {
 
         if (dead || victorious) {
@@ -477,21 +821,27 @@ public class Player extends Entity {
 
         victorious = true;
         moving = false;
+        velocityX = 0f;
+
         attacking = false;
         blocking = false;
+        hitStunned = false;
+
         dashTimer = 0;
 
         playAnimation(VICTORY, false);
     }
 
+    // ==========================================
     // PLAY ANIMATION
+    // ==========================================
+
     private void playAnimation(int action, boolean loop) {
 
         if (!hasAnimation(action)) {
             return;
         }
 
-        // Do not restart an animation that is already playing.
         if (playerAction == action
                 && animationLoop == loop
                 && aniIndex < getValidFrameCount(action) - 1) {
@@ -501,28 +851,36 @@ public class Player extends Entity {
         playerAction = action;
         aniIndex = 0;
         aniTick = 0;
+
         animationLoop = loop;
     }
 
+    // ==========================================
     // SELECT NORMAL ANIMATION
+    // ==========================================
+
     private void selectNormalAnimation() {
 
-        if (isLocked() || attacking || blocking || dashTimer > 0) {
+        if (isLocked() || attacking || blocking
+                || dashTimer > 0 || hitStunned) {
             return;
         }
 
         if (!onGround) {
 
             if (velocityY < 0) {
+
                 playAnimation(
                         jumpsUsed == 2 ? DOUBLE_JUMP : JUMP,
                         true
                 );
+
             } else {
+
                 playAnimation(FALL, true);
             }
 
-        } else if (moving) {
+        } else if (Math.abs(velocityX) > 0.1f || moving) {
 
             playAnimation(running ? RUNNING : WALK, true);
 
@@ -532,7 +890,10 @@ public class Player extends Entity {
         }
     }
 
+    // ==========================================
     // UPDATE ANIMATION
+    // ==========================================
+
     private void updateAnimation() {
 
         if (!hasAnimation(playerAction)) {
@@ -545,6 +906,7 @@ public class Player extends Entity {
 
         if (playerAction == JUMP) {
             currentSpeed = jumpAniSpeed;
+
         } else if (playerAction == DOUBLE_JUMP) {
             currentSpeed = doubleJumpAniSpeed;
         }
@@ -566,15 +928,21 @@ public class Player extends Entity {
         if (aniIndex >= frameCount) {
 
             if (animationLoop) {
+
                 aniIndex = 0;
+
             } else {
+
                 aniIndex = frameCount - 1;
                 finishAnimation();
             }
         }
     }
 
+    // ==========================================
     // FINISH ANIMATION
+    // ==========================================
+
     private void finishAnimation() {
 
         int finishedAction = playerAction;
@@ -589,6 +957,11 @@ public class Player extends Entity {
                 break;
 
             case HIT:
+
+                hitStunned = false;
+                selectNormalAnimation();
+                break;
+
             case GROUND:
             case LAND:
             case DASH:
@@ -606,6 +979,7 @@ public class Player extends Entity {
                     }
 
                 } else {
+
                     playAnimation(LAND, false);
                 }
 
@@ -613,8 +987,6 @@ public class Player extends Entity {
 
             case DEATH:
             case VICTORY:
-
-                // Keep the final frame.
                 break;
 
             default:
@@ -622,7 +994,10 @@ public class Player extends Entity {
         }
     }
 
+    // ==========================================
     // MAIN UPDATE
+    // ==========================================
+
     public void update() {
 
         if (isLocked()) {
@@ -635,18 +1010,22 @@ public class Player extends Entity {
         updateDash();
         updateAnimation();
 
-        // Automatically choose idle, walk, or run.
-        if (onGround && !attacking && !blocking && dashTimer <= 0
+        // Update normal ground animation when no special
+        // animation is currently playing.
+        if (!attacking && onGround && !blocking
+                && dashTimer <= 0 && !hitStunned
                 && playerAction != LAND
                 && playerAction != HIT
                 && playerAction != GROUND
-                && playerAction != DASH
-                && playerAction != ATTACK
-                && playerAction != SPECIAL_ATTACK) {
+                && playerAction != DASH) {
 
-            int wantedAction = moving
-                    ? (running ? RUNNING : WALK)
-                    : IDLE;
+            int wantedAction;
+
+            if (Math.abs(velocityX) > 0.1f) {
+                wantedAction = running ? RUNNING : WALK;
+            } else {
+                wantedAction = IDLE;
+            }
 
             if (playerAction != wantedAction) {
                 playAnimation(wantedAction, true);
@@ -654,7 +1033,10 @@ public class Player extends Entity {
         }
     }
 
+    // ==========================================
     // RENDER
+    // ==========================================
+
     public void render(Graphics g) {
 
         if (g instanceof Graphics2D) {
@@ -674,8 +1056,8 @@ public class Player extends Entity {
             return;
         }
 
-        int drawY = (int) (y + jumpOffset);
         int drawX = (int) x;
+        int drawY = (int) y;
 
         if (facingLeft) {
 
@@ -701,29 +1083,32 @@ public class Player extends Entity {
         }
     }
 
+    // ==========================================
     // ANIMATION SPEED SETTINGS
-    public void setAnimationSpeed(int speed) {
+    // ==========================================
 
+    public void setAnimationSpeed(int speed) {
         if (speed > 0) {
             aniSpeed = speed;
         }
     }
 
     public void setJumpAnimationSpeed(int speed) {
-
         if (speed > 0) {
             jumpAniSpeed = speed;
         }
     }
 
     public void setDoubleJumpAnimationSpeed(int speed) {
-
         if (speed > 0) {
             doubleJumpAniSpeed = speed;
         }
     }
 
+    // ==========================================
     // GETTERS
+    // ==========================================
+
     public int getPlayerAction() {
         return playerAction;
     }
@@ -757,7 +1142,15 @@ public class Player extends Entity {
     }
 
     public float getPlayerY() {
-        return y + jumpOffset;
+        return y;
+    }
+
+    public float getVelocityX() {
+        return velocityX;
+    }
+
+    public float getVelocityY() {
+        return velocityY;
     }
 
     public BufferedImage[][] getAnimations() {
